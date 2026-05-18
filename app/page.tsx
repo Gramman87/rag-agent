@@ -181,7 +181,7 @@ export default function RAGPage() {
                   {[
                     { label: "Embed Query", done: stage === "generating" || stage === "done" },
                     { label: "Retrieve Chunks", done: stage === "generating" || stage === "done" },
-                    { label: "Generate Answer", done: stage === "done" },
+                    { label: "Mock Answer", done: stage === "done" },
                   ].map((step, i) => (
                     <div key={step.label} className="flex items-center gap-2">
                       {i > 0 && <ChevronRight className="w-3 h-3 text-gray-700" />}
@@ -231,7 +231,8 @@ export default function RAGPage() {
                   <div className="bg-cyan-950/20 border border-cyan-500/20 rounded-xl p-5 animate-fade-in">
                     <div className="flex items-center gap-2 mb-3">
                       <Zap className="w-3.5 h-3.5 text-cyan-400" />
-                      <span className="text-xs font-semibold text-cyan-400 uppercase tracking-widest">Generated Answer</span>
+                      <span className="text-xs font-semibold text-cyan-400 uppercase tracking-widest">Answer</span>
+                      <span className="text-xs bg-amber-500/10 text-amber-400 border border-amber-500/20 px-2 py-0.5 rounded-full">Mock — would call LLM in production</span>
                     </div>
                     <p className="text-sm text-gray-300 leading-relaxed whitespace-pre-wrap">
                       {displayedAnswer}
@@ -246,7 +247,7 @@ export default function RAGPage() {
               <div className="flex flex-col items-center justify-center h-64 text-center">
                 <Database className="w-10 h-10 text-gray-800 mb-4" />
                 <p className="text-sm text-gray-600">Ask a question to see the RAG pipeline in action</p>
-                <p className="text-xs text-gray-700 mt-1">Chunks are retrieved by TF-IDF cosine similarity</p>
+                <p className="text-xs text-gray-700 mt-1">Retrieval is real (TF-IDF cosine similarity) · Answer generation is mocked</p>
               </div>
             )}
           </div>

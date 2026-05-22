@@ -6,17 +6,23 @@ const corpus = buildCorpus();
 
 export async function POST(req: NextRequest) {
   const { query } = await req.json();
-  if (!query?.trim()) return NextResponse.json({ error: "No query provided" }, { status: 400 });
+  if (!query?.trim()) {
+    return NextResponse.json({ error: "No query provided" }, { status: 400 });
+  }
 
   const chunks = retrieve(query, corpus, 3);
-  const answer = generateAnswer(query, chunks);
 
-  // Return chunks with scores for UI visualization
-  return NextResponse.json({ answer, chunks, totalChunks: corpus.length });
+  try {
+    const answer = await generateAnswer(query, chunks);
+    return NextResponse.json({ answer, chunks, totalChunks: corpus.length });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error("RAG generation error:", message);
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
 }
 
 export async function GET() {
-  // Return corpus stats and document list for the UI
   const docs = DOCUMENTS.map((d) => ({
     id: d.id,
     title: d.title,

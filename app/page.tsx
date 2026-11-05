@@ -36,6 +36,7 @@ export default function RAGPage() {
   const [answer, setAnswer] = useState("");
   const [displayedAnswer, setDisplayedAnswer] = useState("");
   const [notice, setNotice] = useState("");
+  const [mode, setMode] = useState<"hybrid" | "keyword">("keyword");
   const [docs, setDocs] = useState<Doc[]>([]);
   const [totalChunks, setTotalChunks] = useState(0);
 
@@ -43,6 +44,7 @@ export default function RAGPage() {
     fetch("/api/rag").then((r) => r.json()).then((d) => {
       setDocs(d.docs);
       setTotalChunks(d.totalChunks);
+      setMode(d.mode);
     });
   }, []);
 
@@ -80,6 +82,7 @@ export default function RAGPage() {
       setChunks(data.chunks);
       setAnswer(data.answer ?? "");
       setNotice(data.notice ?? "");
+      setMode(data.mode);
     } catch (err) {
       setNotice(err instanceof Error ? err.message : "Request failed");
     }
@@ -110,7 +113,7 @@ export default function RAGPage() {
               <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full" />
               Corpus loaded
             </span>
-            <span className="hidden md:block">{docs.length} documents · TF-IDF retrieval</span>
+            <span className="hidden md:block">{docs.length} documents · {mode === "hybrid" ? "hybrid retrieval (vector + TF-IDF)" : "keyword retrieval (TF-IDF)"}</span>
           </div>
         </div>
       </header>
@@ -181,7 +184,7 @@ export default function RAGPage() {
                 <h2 className="text-xs font-semibold tracking-widest text-gray-500 uppercase mb-3">Pipeline</h2>
                 <div className="flex items-center gap-2 mb-5">
                   {[
-                    { label: "Retrieve Chunks", done: stage === "done" },
+                    { label: mode === "hybrid" ? "Hybrid Retrieval" : "Keyword Retrieval", done: stage === "done" },
                     { label: "Generate with Claude", done: stage === "done" && answer !== "" },
                   ].map((step, i) => (
                     <div key={step.label} className="flex items-center gap-2">
@@ -215,10 +218,10 @@ export default function RAGPage() {
                             <div className="h-1.5 w-16 bg-white/[0.06] rounded-full overflow-hidden">
                               <div
                                 className="h-full bg-cyan-500 rounded-full"
-                                style={{ width: `${Math.round(chunk.score * 100 * 5)}%` }}
+                                style={{ width: `${Math.min(100, Math.round(chunk.score * 100))}%` }}
                               />
                             </div>
-                            <span className="text-xs text-gray-600">{(chunk.score * 100).toFixed(1)}%</span>
+                            <span className="text-xs text-gray-600">{Math.round(chunk.score * 100)}%</span>
                           </div>
                         </div>
                         <p className="text-xs text-gray-400 leading-relaxed line-clamp-3">{chunk.text}</p>

@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { DOCUMENTS, Document } from "./documents";
+import type { Embedder } from "./embeddings";
 
 export interface Chunk {
   id: string;
@@ -110,6 +111,82 @@ export function retrieve(query: string, corpus: Chunk[], topK = 3): Chunk[] {
     .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
     .slice(0, topK)
     .filter((c) => (c.score ?? 0) > 0);
+}
+
+// ─── Hybrid retrieval ────────────────────────────────────────────────────────
+
+// Standard constant from the reciprocal rank fusion paper; it damps the gap between top ranks.
+const RRF_K = 60;
+// Below this cosine similarity a chunk is treated as unrelated, so a question the docs don't
+// cover can still retrieve nothing instead of its least-bad match.
+export const MIN_VECTOR_SIMILARITY = 0.3;
+
+export type RetrievalMode = "hybrid" | "keyword";
+export type RetrievalResult = { chunks: Chunk[]; mode: RetrievalMode };
+
+function vectorCosine(a: number[], b: number[]): number {
+  let dot = 0;
+  let magA = 0;
+  let magB = 0;
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i] * b[i];
+    magA += a[i] * a[i];
+    magB += b[i] * b[i];
+  }
+  return magA === 0 || magB === 0 ? 0 : dot / (Math.sqrt(magA) * Math.sqrt(magB));
+}
+
+// Merges ranked lists by position, so keyword and cosine scores never need a common scale.
+// A chunk near the top of both lists beats one at the very top of only one.
+export function reciprocalRankFusion(lists: Chunk[][]): Chunk[] {
+  const fused = new Map<string, { chunk: Chunk; total: number }>();
+  for (const list of lists) {
+    list.forEach((chunk, rank) => {
+      const entry = fused.get(chunk.id) ?? { chunk, total: 0 };
+      entry.total += 1 / (RRF_K + rank + 1);
+      fused.set(chunk.id, entry);
+    });
+  }
+  const best = lists.length / (RRF_K + 1);
+  return [...fused.values()]
+    .sort((a, b) => b.total - a.total)
+    .map(({ chunk, total }) => ({ ...chunk, score: total / best }));
+}
+
+// Corpus embeddings cost money and never change, so each corpus is embedded once per process.
+const corpusVectors = new WeakMap<Chunk[], Promise<number[][]>>();
+function embedCorpus(corpus: Chunk[], embed: Embedder) {
+  let vectors = corpusVectors.get(corpus);
+  if (!vectors) {
+    vectors = embed(corpus.map((c) => `${c.docTitle}\n${c.text}`), "document");
+    corpusVectors.set(corpus, vectors);
+    vectors.catch(() => corpusVectors.delete(corpus));
+  }
+  return vectors;
+}
+
+// Falls back to keyword search when there is no embedder or the embedding call fails, so a
+// missing key or a Voyage outage degrades results instead of breaking the page.
+export async function retrieveHybrid(
+  query: string,
+  corpus: Chunk[],
+  embed: Embedder | null,
+  topK = 3
+): Promise<RetrievalResult> {
+  const keyword = retrieve(query, corpus, corpus.length);
+  if (!embed) return { chunks: keyword.slice(0, topK), mode: "keyword" };
+
+  try {
+    const [vectors, [queryVector]] = await Promise.all([embedCorpus(corpus, embed), embed([query], "query")]);
+    const semantic = corpus
+      .map((chunk, i) => ({ ...chunk, score: vectorCosine(queryVector, vectors[i]) }))
+      .filter((chunk) => chunk.score >= MIN_VECTOR_SIMILARITY)
+      .sort((a, b) => b.score - a.score);
+    return { chunks: reciprocalRankFusion([keyword, semantic]).slice(0, topK), mode: "hybrid" };
+  } catch (err) {
+    console.error("Falling back to keyword retrieval:", err instanceof Error ? err.message : String(err));
+    return { chunks: keyword.slice(0, topK), mode: "keyword" };
+  }
 }
 
 // ─── Generation ──────────────────────────────────────────────────────────────

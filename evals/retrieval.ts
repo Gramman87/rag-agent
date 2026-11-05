@@ -1,4 +1,5 @@
-import { buildCorpus, retrieve } from "../lib/rag";
+import { buildCorpus, retrieve, retrieveHybrid } from "../lib/rag";
+import { embedderFromEnv } from "../lib/embeddings";
 import { CASES } from "./cases";
 import { score, type Score } from "./scoring";
 
@@ -13,7 +14,26 @@ for (const kind of ["direct", "paraphrase"] as const) {
   const cases = CASES.filter((c) => c.kind === kind);
   console.log(row(`keyword / ${kind}`, score(cases, cases.map((c) => retrieve(c.question, corpus, 10)))));
 }
-for (const c of CASES) {
-  const rank = retrieve(c.question, corpus, 10).findIndex((chunk) => chunk.text.includes(c.expect));
-  if (rank !== 0) console.log(`  rank ${rank < 0 ? "miss" : rank + 1}: ${c.question}`);
+
+async function main() {
+  const embed = embedderFromEnv();
+  if (!embed) {
+    console.log("\nSet VOYAGE_API_KEY to score hybrid retrieval as well.");
+  } else {
+    for (const kind of ["direct", "paraphrase"] as const) {
+      const cases = CASES.filter((c) => c.kind === kind);
+      const results = [];
+      for (const c of cases) {
+        const { chunks, mode } = await retrieveHybrid(c.question, corpus, embed, 10);
+        if (mode !== "hybrid") throw new Error("Embedding failed, so this would not be a hybrid score");
+        results.push(chunks);
+      }
+      console.log(row(`hybrid / ${kind}`, score(cases, results)));
+    }
+  }
 }
+
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

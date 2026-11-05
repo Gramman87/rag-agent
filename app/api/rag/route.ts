@@ -3,22 +3,32 @@ import { buildCorpus, retrieve, generateAnswer, chunkDocument } from "@/lib/rag"
 import { DOCUMENTS } from "@/lib/documents";
 
 const corpus = buildCorpus();
+const MAX_QUERY_LENGTH = 500;
 
 export async function POST(req: NextRequest) {
-  const { query } = await req.json();
-  if (!query?.trim()) {
+  const body = await req.json().catch(() => null);
+  const query = typeof body?.query === "string" ? body.query.trim() : "";
+  if (!query) {
     return NextResponse.json({ error: "No query provided" }, { status: 400 });
+  }
+  if (query.length > MAX_QUERY_LENGTH) {
+    return NextResponse.json({ error: `Query must be ${MAX_QUERY_LENGTH} characters or fewer` }, { status: 400 });
   }
 
   const chunks = retrieve(query, corpus, 3);
 
+  // Retrieval works without Claude, so a generation problem still returns what was found.
   try {
     const answer = await generateAnswer(query, chunks);
     return NextResponse.json({ answer, chunks, totalChunks: corpus.length });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err);
-    console.error("RAG generation error:", message);
-    return NextResponse.json({ error: message }, { status: 500 });
+    console.error("RAG generation error:", err instanceof Error ? err.message : String(err));
+    return NextResponse.json({
+      answer: null,
+      notice: "Answer generation is unavailable right now. These are the passages retrieval found.",
+      chunks,
+      totalChunks: corpus.length,
+    });
   }
 }
 

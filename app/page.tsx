@@ -27,7 +27,7 @@ const SUGGESTIONS = [
   "Why is my webhook failing?",
 ];
 
-type Stage = "idle" | "retrieving" | "generating" | "done";
+type Stage = "idle" | "working" | "done";
 
 export default function RAGPage() {
   const [query, setQuery] = useState("");
@@ -35,6 +35,7 @@ export default function RAGPage() {
   const [chunks, setChunks] = useState<Chunk[]>([]);
   const [answer, setAnswer] = useState("");
   const [displayedAnswer, setDisplayedAnswer] = useState("");
+  const [notice, setNotice] = useState("");
   const [docs, setDocs] = useState<Doc[]>([]);
   const [totalChunks, setTotalChunks] = useState(0);
 
@@ -63,24 +64,26 @@ export default function RAGPage() {
 
   const run = async (q: string) => {
     if (!q.trim()) return;
-    setStage("retrieving");
+    setStage("working");
     setChunks([]);
     setAnswer("");
     setDisplayedAnswer("");
+    setNotice("");
 
-    await new Promise((r) => setTimeout(r, 800)); // simulate retrieval latency
-
-    const res = await fetch("/api/rag", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ query: q }),
-    });
-    const data = await res.json();
-    setChunks(data.chunks);
-    setStage("generating");
-
-    await new Promise((r) => setTimeout(r, 400));
-    setAnswer(data.answer);
+    try {
+      const res = await fetch("/api/rag", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: q }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Request failed");
+      setChunks(data.chunks);
+      setAnswer(data.answer ?? "");
+      setNotice(data.notice ?? "");
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : "Request failed");
+    }
     setStage("done");
   };
 
@@ -149,10 +152,10 @@ export default function RAGPage() {
                 />
                 <button
                   type="submit"
-                  disabled={stage === "retrieving" || stage === "generating"}
+                  disabled={stage === "working"}
                   className="bg-cyan-600 hover:bg-cyan-500 disabled:bg-gray-800 text-white px-4 py-3 rounded-xl transition-colors"
                 >
-                  {stage === "retrieving" || stage === "generating"
+                  {stage === "working"
                     ? <Loader2 className="w-4 h-4 animate-spin" />
                     : <Search className="w-4 h-4" />
                   }
@@ -179,9 +182,8 @@ export default function RAGPage() {
                 <h2 className="text-xs font-semibold tracking-widest text-gray-500 uppercase mb-3">Pipeline</h2>
                 <div className="flex items-center gap-2 mb-5">
                   {[
-                    { label: "Embed Query", done: stage === "generating" || stage === "done" },
-                    { label: "Retrieve Chunks", done: stage === "generating" || stage === "done" },
-                    { label: "Mock Answer", done: stage === "done" },
+                    { label: "Retrieve Chunks", done: stage === "done" },
+                    { label: "Generate with Claude", done: stage === "done" && answer !== "" },
                   ].map((step, i) => (
                     <div key={step.label} className="flex items-center gap-2">
                       {i > 0 && <ChevronRight className="w-3 h-3 text-gray-700" />}
@@ -227,16 +229,19 @@ export default function RAGPage() {
                 )}
 
                 {/* Answer */}
-                {(stage === "generating" || stage === "done") && (
+                {notice && (
+                  <p className="text-xs text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2 mb-5">{notice}</p>
+                )}
+
+                {answer && (
                   <div className="bg-cyan-950/20 border border-cyan-500/20 rounded-xl p-5 animate-fade-in">
                     <div className="flex items-center gap-2 mb-3">
                       <Zap className="w-3.5 h-3.5 text-cyan-400" />
                       <span className="text-xs font-semibold text-cyan-400 uppercase tracking-widest">Answer</span>
-                      <span className="text-xs bg-amber-500/10 text-amber-400 border border-amber-500/20 px-2 py-0.5 rounded-full">Mock — would call LLM in production</span>
                     </div>
                     <p className="text-sm text-gray-300 leading-relaxed whitespace-pre-wrap">
                       {displayedAnswer}
-                      {stage === "generating" && <span className="inline-block w-0.5 h-4 bg-cyan-400 ml-0.5 animate-pulse" />}
+                      {displayedAnswer.length < answer.length && <span className="inline-block w-0.5 h-4 bg-cyan-400 ml-0.5 animate-pulse" />}
                     </p>
                   </div>
                 )}
@@ -247,7 +252,7 @@ export default function RAGPage() {
               <div className="flex flex-col items-center justify-center h-64 text-center">
                 <Database className="w-10 h-10 text-gray-800 mb-4" />
                 <p className="text-sm text-gray-600">Ask a question to see the RAG pipeline in action</p>
-                <p className="text-xs text-gray-700 mt-1">Retrieval is real (TF-IDF cosine similarity) · Answer generation is mocked</p>
+                <p className="text-xs text-gray-700 mt-1">Retrieval scores each chunk, then Claude answers from the top matches with citations</p>
               </div>
             )}
           </div>

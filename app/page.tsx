@@ -49,7 +49,6 @@ export default function RAGPage() {
   // Typewriter effect for answer
   useEffect(() => {
     if (!answer) return;
-    setDisplayedAnswer("");
     let i = 0;
     const interval = setInterval(() => {
       setDisplayedAnswer(answer.slice(0, i));

@@ -10,27 +10,20 @@ export interface Chunk {
   score?: number;
 }
 
-// Split document content into overlapping chunks
-export function chunkDocument(doc: Document, chunkSize = 300, overlap = 60): Chunk[] {
-  const words = doc.content.split(/\s+/);
-  const chunks: Chunk[] = [];
-  let i = 0;
-  let idx = 0;
-
-  while (i < words.length) {
-    const slice = words.slice(i, i + chunkSize);
-    chunks.push({
+// Each document is a series of titled paragraphs ("Rate Limits: ..."), so one paragraph is one
+// topic. Splitting there keeps a chunk about one thing instead of cutting across topics.
+export function chunkDocument(doc: Document): Chunk[] {
+  return doc.content
+    .split(/\n\s*\n/)
+    .map((paragraph) => paragraph.trim())
+    .filter(Boolean)
+    .map((text, idx) => ({
       id: `${doc.id}-chunk-${idx}`,
       docId: doc.id,
       docTitle: doc.title,
       source: doc.source,
-      text: slice.join(" "),
-    });
-    i += chunkSize - overlap;
-    idx++;
-  }
-
-  return chunks;
+      text,
+    }));
 }
 
 // Build the full corpus of chunks from all documents
